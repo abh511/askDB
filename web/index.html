@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AskDB</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◆</span>
+      <div>
+        <h1>AskDB</h1>
+        <p>Ask the Olist e-commerce data a question in plain English</p>
+      </div>
+    </div>
+    <nav class="topbar-actions">
+      <span id="health" class="health" title="API and database status">● checking…</span>
+      <a href="/docs" target="_blank" rel="noopener">API docs</a>
+      <button id="theme-toggle" class="icon-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section>
+        <h2>Try a question</h2>
+        <div id="examples"></div>
+      </section>
+      <section>
+        <div class="section-head">
+          <h2>History</h2>
+          <button id="clear-history" class="link-btn">clear</button>
+        </div>
+        <ol id="history" class="history"></ol>
+      </section>
+    </aside>
+
+    <main>
+      <form id="ask-form" class="ask-box">
+        <textarea id="question" rows="2" maxlength="500"
+          placeholder="e.g. Which 5 product categories earned the most revenue in 2017?"></textarea>
+        <div class="ask-row">
+          <span class="hint">Enter to ask · Shift+Enter for a new line</span>
+          <button id="ask-btn" type="submit" class="primary">Ask</button>
+        </div>
+      </form>
+
+      <section id="loading" class="card loading" hidden>
+        <div class="spinner"></div>
+        <div>
+          <strong>Working… <span id="elapsed">0</span>s</strong>
+          <p>Finding tables → writing SQL → safety check → running read-only → writing the answer</p>
+        </div>
+      </section>
+
+      <section id="welcome" class="card welcome">
+        <h2>How it works</h2>
+        <ol class="flow">
+          <li><b>Find tables</b> the question needs (vector search over table descriptions)</li>
+          <li><b>Write SQL</b> with an LLM, guided by 3 similar solved examples</li>
+          <li><b>Safety guard</b> checks it is a single read-only SELECT on known tables</li>
+          <li><b>Run</b> as a read-only database user (5 s timeout, max 500 rows); if it errors, the LLM fixes it (up to 2 retries)</li>
+          <li><b>Answer</b> in one sentence, with a table and a chart</li>
+        </ol>
+        <p class="muted">Data: ~100K Brazilian e-commerce orders, Sep 2016 – Oct 2018, money in R$.</p>
+      </section>
+
+      <section id="result" hidden>
+        <div class="card answer-card">
+          <div class="answer-head">
+            <span id="status-badge" class="badge"></span>
+            <span id="meta" class="muted"></span>
+          </div>
+          <p id="answer" class="answer"></p>
+          <p id="reason" class="reason" hidden></p>
+        </div>
+
+        <div id="data-cards" class="grid">
+          <div class="card">
+            <div class="card-head">
+              <h3>Chart</h3>
+              <div class="seg" id="chart-switch">
+                <button data-type="bar">Bar</button>
+                <button data-type="line">Line</button>
+                <button data-type="table">None</button>
+              </div>
+            </div>
+            <div id="chart"></div>
+            <p id="no-chart" class="muted center" hidden>No chart for this result shape.</p>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Result <span id="row-count" class="muted"></span></h3>
+              <button id="download-csv" class="link-btn">download CSV</button>
+            </div>
+            <div class="table-wrap"><table id="table"></table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>SQL</h3>
+            <button id="copy-sql" class="link-btn">copy</button>
+          </div>
+          <pre id="sql"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

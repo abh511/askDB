@@ -1,0 +1,22 @@
+# core
+pandas
+sqlalchemy>=2.0
+psycopg[binary]
+python-dotenv
+pyyaml
+sqlglot
+# retrieval
+sentence-transformers
+chromadb
+# llm
+langchain-groq
+# app
+fastapi
+uvicorn[standard]
+pydantic>=2
+streamlit
+plotly
+requests
+# experiments + tests
+mlflow
+pytest

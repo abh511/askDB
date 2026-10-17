@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+.git/
+data/raw/
+.chroma/
+mlruns/
+mlflow.db
+logs/
+eval/results/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/

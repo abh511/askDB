@@ -1,0 +1,166 @@
+# Plain-English notes on every table and column. These get embedded into ChromaDB
+# (one document per table) and sent to the LLM, so write them the way a question
+# would be phrased, and document every trap.
+#
+# Business definitions used everywhere (prompt, few-shot bank, eval gold SQL):
+#   - revenue        = SUM(order_items.price) over orders with order_status = 'delivered'
+#   - a "customer"   = a person = customers.customer_unique_id (NOT customer_id)
+#   - "in 2017" etc. = by orders.order_purchase_timestamp
+#   - delivery time  = fractional days from purchase to delivery (see orders notes)
+#   - percentages    = 0-100, not 0-1
+#   - money is Brazilian real (R$)
+
+tables:
+  orders:
+    description: >
+      One row per order (99,441 orders, Sep 2016 - Oct 2018) with its status and five
+      lifecycle timestamps: purchase, payment approval, handed to carrier, delivered to
+      customer, and estimated delivery. Use it for order counts, order status, dates,
+      months, years, delivery time and late deliveries.
+    notes:
+      - Revenue and sales questions only count orders with order_status = 'delivered'.
+      - Use order_purchase_timestamp for "in 2017", "per month", "per year" questions.
+      - customer_id here is per order; join customers to get customer_unique_id (the real person).
+      - Delivery time in days = EXTRACT(EPOCH FROM (order_delivered_customer_date - order_purchase_timestamp)) / 86400 (fractional days).
+      - A delivery is late when order_delivered_customer_date > order_estimated_delivery_date.
+      - 775 orders (mostly canceled/unavailable) have no rows in order_items.
+    columns:
+      order_id: Unique order id. Joins to order_items, order_payments, order_reviews.
+      customer_id: Per-order customer id (joins customers.customer_id). NOT a person.
+      order_status: "One of: delivered, shipped, canceled, unavailable, invoiced, processing, created, approved."
+      order_purchase_timestamp: When the customer placed the order.
+      order_approved_at: When the payment was approved.
+      order_delivered_carrier_date: When the order was handed to the carrier.
+      order_delivered_customer_date: When the order reached the customer (NULL if not delivered).
+      order_estimated_delivery_date: Delivery date promised to the customer.
+
+  order_items:
+    description: >
+      One row per item in an order, with the product, the seller, the item price and the
+      freight (shipping) cost. Use it for revenue, sales, prices, items sold, product and
+      seller performance.
+    notes:
+      - Revenue = SUM(price), not a count of orders. Join orders and filter order_status = 'delivered'.
+      - An order with 3 items has 3 rows; order_item_id is 1, 2, 3 within the order.
+      - Number of items sold = COUNT(*) of order_items rows.
+      - freight_value is shipping cost, not revenue.
+    columns:
+      order_id: Order id (joins orders.order_id).
+      order_item_id: Position of the item inside the order (1, 2, 3, ...).
+      product_id: Product sold (joins products.product_id).
+      seller_id: Seller who sold the item (joins sellers.seller_id).
+      shipping_limit_date: Deadline for the seller to hand the item to the carrier.
+      price: Item price in R$.
+      freight_value: Shipping cost for the item in R$.
+
+  customers:
+    description: >
+      Customer location (city, state, zip prefix) for each order. Use it for questions
+      about customers, buyers, where customers live, customer states and cities, and
+      repeat or returning customers.
+    notes:
+      - customer_id is created per order, so one person has several customer_id values.
+      - A customer (a person) is customer_unique_id. Count customers with COUNT(DISTINCT customer_unique_id).
+      - Repeat customers are customer_unique_id values with more than one order.
+      - customer_state is a 2-letter Brazilian state code, e.g. 'SP' (Sao Paulo), 'RJ', 'MG'.
+      - City names are lower case without accents, e.g. 'sao paulo', 'rio de janeiro'.
+    columns:
+      customer_id: Per-order customer id (joins orders.customer_id).
+      customer_unique_id: The real person. Use for counting customers and repeat customers.
+      customer_zip_code_prefix: First 5 digits of the zip code, stored as TEXT (keeps leading zeros).
+      customer_city: Customer city, lower case.
+      customer_state: 2-letter state code.
+
+  order_payments:
+    description: >
+      How each order was paid: payment type (credit card, boleto, voucher, debit card),
+      number of installments and amount paid. Use it for payment methods, installments
+      and amounts paid.
+    notes:
+      - One order can have several payment rows (e.g. a credit card plus a voucher); 2,961 orders do.
+      - Total paid for an order = SUM(payment_value) grouped by order_id.
+      - Count orders per payment type with COUNT(DISTINCT order_id).
+      - payment_type values are 'credit_card', 'boleto', 'voucher', 'debit_card', 'not_defined'.
+      - Only credit_card payments have more than 1 installment.
+    columns:
+      order_id: Order id (joins orders.order_id).
+      payment_sequential: 1, 2, ... when an order has several payments.
+      payment_type: credit_card, boleto (Brazilian bank slip), voucher, debit_card, not_defined.
+      payment_installments: Number of monthly installments chosen.
+      payment_value: Amount paid in R$ by this payment row.
+
+  order_reviews:
+    description: >
+      Customer reviews of orders: a score from 1 to 5 stars and an optional comment.
+      Use it for review scores, ratings, customer satisfaction and complaints.
+    notes:
+      - review_score is 1 (worst) to 5 (best).
+      - Comments are in Portuguese and are NULL for most reviews.
+      - review_id is not unique, and some orders have more than one review.
+      - Average rating = AVG(review_score).
+    columns:
+      review_id: Review id (not unique).
+      order_id: Reviewed order (joins orders.order_id).
+      review_score: Stars from 1 to 5.
+      review_comment_title: Optional title, Portuguese.
+      review_comment_message: Optional comment, Portuguese.
+      review_creation_date: When the review survey was sent.
+      review_answer_timestamp: When the customer answered.
+
+  products:
+    description: >
+      Product catalogue: product category plus size, weight and how many photos the
+      listing has. Use it for product categories, product weight and dimensions.
+    notes:
+      - product_category_name is in Portuguese. For English names always join category_translation.
+      - 610 products have no category (NULL).
+      - Column names keep the dataset's original spelling "lenght", e.g. product_name_lenght.
+    columns:
+      product_id: Unique product id (joins order_items.product_id).
+      product_category_name: Category in Portuguese (joins category_translation.product_category_name).
+      product_name_lenght: Number of characters in the product name (spelled "lenght").
+      product_description_lenght: Number of characters in the description (spelled "lenght").
+      product_photos_qty: Number of photos in the listing.
+      product_weight_g: Weight in grams.
+      product_length_cm: Length in cm.
+      product_height_cm: Height in cm.
+      product_width_cm: Width in cm.
+
+  category_translation:
+    description: >
+      Translates Portuguese product category names to English. Join it whenever a
+      product category name appears in the answer.
+    notes:
+      - Join products.product_category_name = category_translation.product_category_name.
+      - Output product_category_name_english, e.g. 'health_beauty', 'bed_bath_table'.
+      - Two categories have no translation (pc_gamer, portateis_cozinha_e_preparadores_de_alimentos); an inner join drops them.
+    columns:
+      product_category_name: Category name in Portuguese.
+      product_category_name_english: Category name in English (snake_case).
+
+  sellers:
+    description: >
+      Sellers (merchants) on the marketplace with their city and state. Use it for
+      questions about sellers, where sellers are located and seller performance.
+    notes:
+      - Join order_items.seller_id = sellers.seller_id to get a seller's sales.
+      - seller_state is a 2-letter state code; most sellers are in 'SP'.
+    columns:
+      seller_id: Unique seller id.
+      seller_zip_code_prefix: First 5 digits of the zip code, TEXT.
+      seller_city: Seller city, lower case.
+      seller_state: 2-letter state code.
+
+  geolocation:
+    description: >
+      Latitude and longitude for Brazilian zip code prefixes. Use it only for
+      map coordinates or distances; rarely needed.
+    notes:
+      - Many duplicate rows per zip prefix (1M rows, 19K prefixes); aggregate (e.g. AVG lat/lng) per prefix before joining.
+      - Join on customers.customer_zip_code_prefix or sellers.seller_zip_code_prefix.
+    columns:
+      geolocation_zip_code_prefix: First 5 digits of the zip code, TEXT.
+      geolocation_lat: Latitude.
+      geolocation_lng: Longitude.
+      geolocation_city: City name.
+      geolocation_state: 2-letter state code.
